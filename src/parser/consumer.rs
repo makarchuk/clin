@@ -148,6 +148,14 @@ impl Leftover {
 mod tests {
     use super::*;
     #[test]
+    fn test_factory() {
+        let tok = Tokenizer::new(vec!["-abcd", "-vvvv", "VALUE"]);
+        assert_eq!(tok.input, vec!["-abcd", "-vvvv", "VALUE"]);
+        assert!(tok.leftover.is_empty());
+        assert_eq!(tok.position, 0);
+    }
+
+    #[test]
     fn test_read_single_arguments() {
         let mut tok = Tokenizer::new(vec!["-abcd", "-vvvv", "VALUE"]);
         assert_eq!(tok.get_name().unwrap(), "a".to_owned());
@@ -188,6 +196,12 @@ mod tests {
     #[test]
     fn test_no_actual_name() {
         let mut tok = Tokenizer::new(vec!["-"]);
+        assert!(tok.get_name().is_err());
+    }
+
+    #[test]
+    fn test_no_invalid_name() {
+        let mut tok = Tokenizer::new(vec!["name"]);
         assert!(tok.get_name().is_err());
     }
 
