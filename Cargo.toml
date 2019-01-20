@@ -1,0 +1,7 @@
+[package]
+name = "clin"
+version = "0.1.0"
+authors = ["Timur <timur.makarchuk@gmail.com>"]
+edition = "2018"
+
+[dependencies]
