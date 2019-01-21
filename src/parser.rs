@@ -7,7 +7,7 @@ mod parsable;
 use std::error;
 
 pub trait Parse {
-    fn parse(&mut self, args: Vec<String>) -> Result<(), Box<dyn error::Error>>;
+    fn parse(&mut self, args: Vec<&str>) -> Result<(), Box<dyn error::Error>>;
 }
 
 pub struct Command<'a> {
@@ -24,7 +24,12 @@ pub struct MyCommand<'a> {
 }
 
 impl<'a> Parse for MyCommand<'a> {
-    fn parse(&mut self, args: Vec<String>) -> Result<(), Box<dyn error::Error>> {
+    fn parse(&mut self, args: Vec<&str>) -> Result<(), Box<dyn error::Error>> {
+        consumer::consume(
+            &mut vec![&mut self.a, &mut self.b, &mut self.c, &mut self.x],
+            args,
+        )?;
+
         unimplemented!();
     }
 }

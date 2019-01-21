@@ -21,6 +21,23 @@ enum Leftover {
     Empty,
 }
 
+#[derive(Debug)]
+enum Name {
+    ShortArg(String),
+    LongArg(String),
+    Command(String),
+}
+
+impl Name {
+    fn value(&self) -> &str {
+        match self {
+            Name::ShortArg(v) => v,
+            Name::LongArg(v) => v,
+            Name::Command(v) => v,
+        }
+    }
+}
+
 impl<'a> Tokenizer<'a> {
     fn new(input: Vec<&'a str>) -> Self {
         Self {
@@ -40,7 +57,7 @@ impl<'a> Tokenizer<'a> {
         token.to_owned()
     }
 
-    fn get_name(&mut self) -> Result<String, Box<dyn error::Error>> {
+    fn get_name(&mut self) -> Result<Name, Box<dyn error::Error>> {
         if self.leftover.is_empty() {
             let token = self.read_token();
             match &token {
@@ -53,28 +70,26 @@ impl<'a> Tokenizer<'a> {
                         leftover_buffer.push_str(chunks[1]);
                         self.leftover = Leftover::DoubleDash(leftover_buffer);
                     }
-                    Ok(chunks[0].to_owned())
+                    Ok(Name::LongArg(chunks[0].to_owned()))
                 }
                 t if t.starts_with("-") => {
                     let t = &t[1..];
                     let mut chars = t.chars();
                     match chars.next() {
-                        None => Err(Box::new(ParsingError {
-                            msg: "No charachters after `-` while searching for value".to_owned(),
-                        })),
+                        None => Err(ParsingError::boxed(
+                            "No charachters after `-` while searching for value",
+                        )),
                         Some(v) => {
                             let return_val = v.to_owned();
                             let leftover_buffer = chars.collect::<String>();
                             if leftover_buffer.len() > 0 {
                                 self.leftover = Leftover::SingleDash(leftover_buffer);
                             }
-                            Ok(return_val.to_string())
+                            Ok(Name::ShortArg(return_val.to_string()))
                         }
                     }
                 }
-                _ => Err(Box::new(ParsingError {
-                    msg: format!("Name should start with - or --. Got {}", token),
-                })),
+                t => Ok(Name::Command(t.to_owned())),
             }
         } else {
             self.leftover.read_name()
@@ -98,7 +113,7 @@ impl Leftover {
         }
     }
 
-    fn read_name(&mut self) -> Result<String, Box<dyn error::Error>> {
+    fn read_name(&mut self) -> Result<Name, Box<dyn error::Error>> {
         match &self {
             Leftover::Empty => panic!("Leftover is empty while trying to be read"),
             Leftover::DoubleDash(val) => Err(Box::new(ParsingError {
@@ -115,7 +130,7 @@ impl Leftover {
                 } else {
                     *self = Leftover::Empty
                 }
-                Ok(next_name.to_string())
+                Ok(Name::ShortArg(next_name.to_string()))
             }
         }
     }
@@ -147,6 +162,34 @@ impl Leftover {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn assert_short_arg(name: Result<Name, Box<dyn error::Error>>, value: &str) {
+        let name = name.unwrap();
+        if let Name::ShortArg(name) = name {
+            assert_eq!(name, value)
+        } else {
+            panic!("{:?} supposed to be a short arg!", name)
+        }
+    }
+
+    fn assert_long_arg(name: Result<Name, Box<dyn error::Error>>, value: &str) {
+        let name = name.unwrap();
+        if let Name::LongArg(name) = name {
+            assert_eq!(name, value)
+        } else {
+            panic!("{:?} supposed to be a long arg!", name)
+        }
+    }
+
+    fn assert_command(name: Result<Name, Box<dyn error::Error>>, value: &str) {
+        let name = name.unwrap();
+        if let Name::Command(name) = name {
+            assert_eq!(name, value)
+        } else {
+            panic!("{:?} supposed to be a command!", name)
+        }
+    }
+
     #[test]
     fn test_factory() {
         let tok = Tokenizer::new(vec!["-abcd", "-vvvv", "VALUE"]);
@@ -158,14 +201,15 @@ mod tests {
     #[test]
     fn test_read_single_arguments() {
         let mut tok = Tokenizer::new(vec!["-abcd", "-vvvv", "VALUE"]);
-        assert_eq!(tok.get_name().unwrap(), "a".to_owned());
-        assert_eq!(tok.get_name().unwrap(), "b".to_owned());
-        assert_eq!(tok.get_value().unwrap(), "cd".to_owned());
+
+        assert_short_arg(tok.get_name(), "a");
+        assert_short_arg(tok.get_name(), "b");
+        assert_eq!(tok.get_value().unwrap(), "cd");
         vec!["v"; 4].iter().for_each(|name| {
             assert_eq!(tok.is_over(), false);
-            assert_eq!(tok.get_name().unwrap(), name.to_owned());
+            assert_short_arg(tok.get_name(), *name);
         });
-        assert_eq!(tok.get_value().unwrap(), "VALUE".to_owned());
+        assert_eq!(tok.get_value().unwrap(), "VALUE");
         assert!(tok.is_over())
     }
 
@@ -177,19 +221,19 @@ mod tests {
             "VALUE HERE",
             "--this=that",
         ]);
-        assert_eq!(tok.get_name().unwrap(), "name".to_owned());
-        assert_eq!(tok.get_name().unwrap(), "another_name".to_owned());
+        assert_long_arg(tok.get_name(), "name");
+        assert_long_arg(tok.get_name(), "another_name");
         assert_eq!(tok.is_over(), false);
-        assert_eq!(tok.get_value().unwrap(), "VALUE HERE".to_owned());
-        assert_eq!(tok.get_name().unwrap(), "this".to_owned());
-        assert_eq!(tok.get_value().unwrap(), "that".to_owned());
+        assert_eq!(tok.get_value().unwrap(), "VALUE HERE");
+        assert_long_arg(tok.get_name(), "this");
+        assert_eq!(tok.get_value().unwrap(), "that");
         assert!(tok.is_over())
     }
 
     #[test]
     fn test_read_name_from_value() {
         let mut tok = Tokenizer::new(vec!["--aaaa=bbbb"]);
-        assert_eq!(tok.get_name().unwrap(), "aaaa".to_owned());
+        assert_long_arg(tok.get_name(), "aaaa");
         assert!(tok.get_name().is_err());
     }
 
@@ -202,7 +246,7 @@ mod tests {
     #[test]
     fn test_no_invalid_name() {
         let mut tok = Tokenizer::new(vec!["name"]);
-        assert!(tok.get_name().is_err());
+        assert_command(tok.get_name(), "name")
     }
 
 }
@@ -210,6 +254,22 @@ mod tests {
 #[derive(Debug)]
 struct ParsingError {
     msg: String,
+}
+
+impl ParsingError {
+    fn new<S>(msg: S) -> Self
+    where
+        S: Into<String>,
+    {
+        Self { msg: msg.into() }
+    }
+
+    fn boxed<S>(msg: S) -> Box<Self>
+    where
+        S: Into<String>,
+    {
+        Box::new(Self::new(msg))
+    }
 }
 
 impl fmt::Display for ParsingError {
@@ -220,4 +280,39 @@ impl fmt::Display for ParsingError {
 
 impl error::Error for ParsingError {}
 
-fn consume(arguments: Vec<Box<dyn Parsable>>, args: Vec<&str>) {}
+pub fn consume(
+    options: &mut Vec<&mut dyn Parsable>,
+    args: Vec<&str>,
+) -> Result<(), Box<dyn error::Error>> {
+    let mut tok = Tokenizer::new(args);
+    while !tok.is_over() {
+        let name = tok.get_name()?;
+        if let Name::Command(cmd) = name {
+            //TODO: handle subcommand
+            unimplemented!();
+        }
+        let original_name = name.value().to_owned();
+        let option = match name {
+            Name::ShortArg(n) => options
+                .iter_mut()
+                .filter(|opt| opt.short_names().contains(&n.as_str()))
+                .next()
+                .ok_or(ParsingError::boxed(format!("Unrecognized option {}", n)))?,
+            Name::LongArg(n) => options
+                .iter_mut()
+                .filter(|opt| opt.long_names().contains(&n.as_str()))
+                .next()
+                .ok_or(ParsingError::boxed(format!("Unrecognized option {}", n)))?,
+            _ => panic!(
+                "Command was supposed to be handled earlier, but {:?} received!",
+                name
+            ),
+        };
+        if option.accept_arg() {
+            option.feed_arg(&original_name, Some(&tok.get_value()?))?;
+        } else {
+            option.feed_arg(&original_name, None)?;
+        }
+    }
+    Ok(())
+}
